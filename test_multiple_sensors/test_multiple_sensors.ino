@@ -12,8 +12,8 @@ int numberOfDevices;
 
 DeviceAddress tempDeviceAddress;
 
-const int ioPinsCount = 2;
-const int ioPins[ioPinsCount] = {4,5};
+const int ioPinsCount = 6;
+const int ioPins[ioPinsCount] = {4,5,6,7,8,9};
 
 enum TempState { IDLE, WAITING };
 TempState tempState = IDLE;
