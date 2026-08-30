@@ -126,7 +126,7 @@ void setConversionTime(){
 
 void printDeviceTemperatures(DeviceAddress addresses[], float temps[], int devicesCount){
   for(int i=0;i<devicesCount; i++) {
-    Serial.print("[INFO]: i:");
+    Serial.print("[DEBUG]: i:");
     Serial.print(i);
     Serial.print(" Address: ");
     printAddress(addresses[i]);
@@ -144,7 +144,7 @@ void readPinValues(int pins[], int pinValues[], int pinCount){
 
 void printPinValues(int pins[], int pinValues[], int pinCount){
   for(int i = 0; i < pinCount; i++){
-    Serial.print("[INFO] pin: "),
+    Serial.print("[DEBUG] pin: "),
     Serial.print(pins[i]),
     Serial.print(" value: "),
     Serial.print(pinValues[i]),
@@ -156,7 +156,7 @@ void registerIoPins(){
   for(int i = 0; i < ioPinsCount; i++ ){
     int pin = ioPins[i];
     pinMode(pin, INPUT_PULLUP);
-    Serial.print("io pin (INPUT_PULLUP) - on pin: ");
+    Serial.print("[DEBUG] REGISTERED io-pin (INPUT_PULLUP) - on pin: ");
     Serial.print(pin, DEC);
     Serial.println();
   }
@@ -164,7 +164,7 @@ void registerIoPins(){
 
 void printDevices(){
   // locate devices on the bus
-  Serial.print("Locating devices...");
+  Serial.print("[DEBUG] Locating devices...");
   Serial.print("Found ");
   Serial.print(numberOfDevices, DEC);
   Serial.println(" devices.");
@@ -173,13 +173,13 @@ void printDevices(){
   for(int i=0;i<numberOfDevices; i++) {
     // Search the wire for address
     if(sensors.getAddress(tempDeviceAddress, i)) {
-      Serial.print("Found device ");
+      Serial.print("[DEBUG] Found device ");
       Serial.print(i, DEC);
       Serial.print(" with address: ");
       printAddress(tempDeviceAddress);
       Serial.println();
 		} else {
-		  Serial.print("Found ghost device at ");
+		  Serial.print("[DEBUG] Found ghost device at ");
 		  Serial.print(i, DEC);
 		  Serial.print(" but could not detect address. Check power and cabling");
 		}
