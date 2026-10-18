@@ -8,9 +8,10 @@ OneWire oneWire(ONE_WIRE_BUS);
 
 DallasTemperature sensors(&oneWire);
 
-int numberOfDevices;
-
-DeviceAddress tempDeviceAddress;
+const int MAX_SENSORS = 4;
+const unsigned long RESCAN_INTERVAL_MS = 10000;
+const unsigned long FULL_RESCAN_INTERVAL_MS = 60000;
+const float POWER_ON_RESET_C = 85.0;
 
 const int ioPinsCount = 6;
 const int ioPins[ioPinsCount] = {4,5,6,7,8,9};
@@ -31,17 +32,18 @@ unsigned long lastPinSend = 0;
 const unsigned long TEMP_INTERVAL_MS = 1000;
 const unsigned long PIN_INTERVAL_MS = 250;
 
-DeviceAddress addresses[4];
-float temps[4] = {0};
+DeviceAddress addresses[MAX_SENSORS];
+float temps[MAX_SENSORS] = {0};
+bool sensorFailed[MAX_SENSORS] = {false};
+int sensorCount = -1;
+int busSensorCount = 0;
+unsigned long lastScanTime = 0;
+bool lastReadFailed = false;
 
 void setup(void) {
   // start serial port
   Serial.begin(9600);
-  
-  // Temp sensors
-  sensors.begin();
-  numberOfDevices = sensors.getDeviceCount();
-  sensors.setResolution(PRECISION);
+
   setConversionTime();
   sensors.setWaitForConversion(false);
 
@@ -49,8 +51,9 @@ void setup(void) {
     Serial.println("[ERROR] TEMP_INTERVAL_MS myst be greater than CONVERSION_TIME_MS!");
   }
 
-  printDevices();  
-  
+  sensors.begin();
+  scanSensors();
+
   // IO pins
   registerIoPins();
 
@@ -61,6 +64,10 @@ void loop(void) {
 
   // Start konwersji (raz na sekundę)
   if (tempState == IDLE && now - lastTempTrigger >= TEMP_INTERVAL_MS) {
+    if (rescanDue(now)) {
+      scanSensors();
+      now = millis();
+    }
     lastTempTrigger = now;
     sensors.requestTemperatures();     // nie blokuje
     conversionStartTime = now;
@@ -69,8 +76,8 @@ void loop(void) {
 
   // Odczyt gdy czas minął
   if (tempState == WAITING && now - conversionStartTime >= CONVERSION_TIME_MS) {
-    readTemperatureC(addresses, temps, numberOfDevices);
-    printTempsJson(addresses, temps, numberOfDevices);
+    readTemperatureC(addresses, temps, sensorFailed, sensorCount);
+    printTempsJson(addresses, temps, sensorCount);
     tempState = IDLE;
   }
 
@@ -91,16 +98,97 @@ void printAddress(DeviceAddress deviceAddress) {
   }
 }
 
-void readTemperatureC(DeviceAddress addresses[], float temps[], int devicesCount){
-  DeviceAddress tmpAddress;
-  
-  for(int i=0;i<devicesCount; i++) {
-    if(sensors.getAddress(tmpAddress, i)){
-
-    memcpy(addresses[i], tmpAddress, sizeof(DeviceAddress));
-    temps[i] = sensors.getTempC(tmpAddress);
-    } 	
+void readTemperatureC(DeviceAddress addresses[], float temps[], bool failed[], int devicesCount){
+  lastReadFailed = false;
+  for (int i = 0; i < devicesCount; i++) {
+    temps[i] = sensors.getTempC(addresses[i]);
+    bool readFailed = temps[i] == DEVICE_DISCONNECTED_C || temps[i] == POWER_ON_RESET_C;
+    if (readFailed && !failed[i]) {
+      Serial.print(F("[WARNING] Temperature read failed: "));
+      printAddress(addresses[i]);
+      Serial.println();
+    }
+    failed[i] = readFailed;
+    lastReadFailed = lastReadFailed || readFailed;
   }
+}
+
+bool rescanDue(unsigned long now) {
+  unsigned long sinceScan = now - lastScanTime;
+  if (sinceScan >= FULL_RESCAN_INTERVAL_MS) {
+    return true;
+  }
+  return (sensorCount == 0 || lastReadFailed) && sinceScan >= RESCAN_INTERVAL_MS;
+}
+
+int indexOfAddress(const DeviceAddress address) {
+  for (int i = 0; i < sensorCount; i++) {
+    if (memcmp(addresses[i], address, sizeof(DeviceAddress)) == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+void scanSensors() {
+  DeviceAddress found[MAX_SENSORS];
+  bool foundFailed[MAX_SENSORS];
+  int foundCount = 0;
+  int onBus = 0;
+  bool addressesChanged = false;
+  DeviceAddress address;
+
+  oneWire.reset_search();
+  while (oneWire.search(address)) {
+    if (!sensors.validAddress(address) || !sensors.validFamily(address)) {
+      continue;
+    }
+    onBus++;
+    if (foundCount < MAX_SENSORS) {
+      int previous = indexOfAddress(address);
+      memcpy(found[foundCount], address, sizeof(DeviceAddress));
+      foundFailed[foundCount] = previous >= 0 && sensorFailed[previous];
+      addressesChanged = addressesChanged || previous != foundCount;
+      foundCount++;
+    }
+  }
+  for (int i = 0; i < foundCount; i++) {
+    sensors.setResolution(found[i], PRECISION, true);
+  }
+
+  bool countChanged = foundCount != sensorCount;
+  memcpy(addresses, found, sizeof(DeviceAddress) * foundCount);
+  memcpy(sensorFailed, foundFailed, sizeof(bool) * foundCount);
+  sensorCount = foundCount;
+
+  if (countChanged || addressesChanged) {
+    for (int i = 0; i < sensorCount; i++) {
+      Serial.print(F("[DEBUG] Temperature sensor "));
+      Serial.print(i, DEC);
+      Serial.print(F(": "));
+      printAddress(addresses[i]);
+      Serial.println();
+    }
+  }
+  if (countChanged) {
+    if (sensorCount == 0) {
+      Serial.println(F("[WARNING] No temperature sensors found"));
+    } else {
+      Serial.print(F("[INFO] Temperature sensors found: "));
+      Serial.println(sensorCount, DEC);
+    }
+  }
+  if (onBus > MAX_SENSORS && onBus != busSensorCount) {
+    Serial.print(F("[WARNING] Temperature sensors on bus: "));
+    Serial.print(onBus, DEC);
+    Serial.print(F(", using first "));
+    Serial.println(MAX_SENSORS, DEC);
+  }
+  busSensorCount = onBus;
+  Serial.print(F("[DEBUG] Scan done, sensors: "));
+  Serial.println(sensorCount, DEC);
+
+  lastScanTime = millis();
 }
 
 void setConversionTime(){
@@ -136,7 +224,7 @@ void printDeviceTemperatures(DeviceAddress addresses[], float temps[], int devic
   }
 }
 
-void readPinValues(int pins[], int pinValues[], int pinCount){
+void readPinValues(const int pins[], int pinValues[], int pinCount){
   for(int i = 0; i < pinCount; i++){
     pinValues[i] = digitalRead(pins[i]);
   }
@@ -162,29 +250,6 @@ void registerIoPins(){
   }
 }
 
-void printDevices(){
-  // locate devices on the bus
-  Serial.print("[DEBUG] Locating devices...");
-  Serial.print("Found ");
-  Serial.print(numberOfDevices, DEC);
-  Serial.println(" devices.");
-
-  // Loop through each device, print out address
-  for(int i=0;i<numberOfDevices; i++) {
-    // Search the wire for address
-    if(sensors.getAddress(tempDeviceAddress, i)) {
-      Serial.print("[DEBUG] Found device ");
-      Serial.print(i, DEC);
-      Serial.print(" with address: ");
-      printAddress(tempDeviceAddress);
-      Serial.println();
-		} else {
-		  Serial.print("[DEBUG] Found ghost device at ");
-		  Serial.print(i, DEC);
-		  Serial.print(" but could not detect address. Check power and cabling");
-		}
-  }
-}
 void printTempsJson(DeviceAddress addresses[], float temps[], int tempSensorsCount) {
 
   StaticJsonDocument<384> doc;
@@ -207,7 +272,7 @@ void printTempsJson(DeviceAddress addresses[], float temps[], int tempSensorsCou
   Serial.println();
 }
 
-void printPinsJson(int pins[], int pinValues[], int pinsCount) {
+void printPinsJson(const int pins[], int pinValues[], int pinsCount) {
 
   StaticJsonDocument<128> doc;
 
