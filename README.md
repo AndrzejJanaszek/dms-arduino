@@ -62,4 +62,4 @@ Logi stanu magistrali:
 | `[WARNING] Temperature read failed: <adres>` | raz, gdy odczyt czujnika przechodzi z poprawnego w błędny |
 | `[DEBUG] Scan done, sensors: N` | po każdym skanie |
 
-Skan blokuje pętlę: ok. 150 ms przy pustej magistrali (3 próby `begin()` po 50 ms), przy 4 czujnikach szacunkowo ok. 200 ms (opóźnienie `begin()`, dwa przeszukania magistrali, odczyt scratchpadów), plus wypis adresów przy zmianie zbioru (9600 bodów, ok. 1 ms na znak). Ramka `pins` może się wtedy spóźnić o tyle.
+Skan blokuje pętlę: ok. 1 ms przy pustej magistrali, przy 4 czujnikach szacunkowo ok. 105 ms (przeszukanie magistrali i odczyt scratchpadów przy ustawianiu rozdzielczości), plus wypis adresów przy zmianie zbioru (9600 bodów, ok. 1 ms na znak). Ramka `pins` może się wtedy spóźnić o tyle. `sensors.begin()` (wykrycie trybu zasilania, do 3 prób po 50 ms) jest wołane tylko raz, w `setup()`.

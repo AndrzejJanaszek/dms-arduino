@@ -51,6 +51,7 @@ void setup(void) {
     Serial.println("[ERROR] TEMP_INTERVAL_MS myst be greater than CONVERSION_TIME_MS!");
   }
 
+  sensors.begin();
   scanSensors();
 
   // IO pins
@@ -130,8 +131,6 @@ int indexOfAddress(const DeviceAddress address) {
 }
 
 void scanSensors() {
-  sensors.begin();
-
   DeviceAddress found[MAX_SENSORS];
   bool foundFailed[MAX_SENSORS];
   int foundCount = 0;
